@@ -26,3 +26,6 @@ wikipedia==1.4.0
 # Utilities
 python-dotenv==1.0.1
 
+# Compatibility fix for Gradio + huggingface_hub
+huggingface_hub<0.20
+
