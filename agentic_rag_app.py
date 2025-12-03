@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🤖 Enhanced Agentic RAG System v4.0
+Enhanced Agentic RAG System v4.0
 =====================================
 
 Production-ready RAG system with:
