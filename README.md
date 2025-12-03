@@ -1,3 +1,15 @@
+---
+title: Agentic RAG Chatbot
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 4.44.0
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # 🤖 Enhanced Agentic RAG System v4.0
 
 A production-ready, intelligent document Q&A system powered by LangChain and OpenAI.
