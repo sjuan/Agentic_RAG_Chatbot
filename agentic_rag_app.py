@@ -27,18 +27,14 @@ from collections import Counter
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# LangChain imports - OLD STABLE STYLE for langchain 0.0.340
+# LangChain imports - NEW STYLE for langchain 0.1.0+ with OpenAI 1.0+
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain.memory import ConversationBufferMemory
-# Import text splitter - compatible with older LangChain versions
-try:
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-except ImportError:
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+# Import text splitter - LangChain 0.1.0+ uses separate package
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
 # Document loaders
@@ -601,14 +597,14 @@ class AgenticRAG:
             logger.info(f"📚 Loaded {len(recent)} past conversations into agent memory")
     
     def _initialize_agent(self):
-        """Initialize agent using OLD initialize_agent method (compatible with 0.0.340)."""
+        """Initialize agent using initialize_agent method (compatible with LangChain 0.1.0+)."""
         logger.info("🔧 Initializing agent with initialize_agent()...")
         
         # Create tool list
         tools = self._create_tools()
         
         try:
-            # Use OLD initialize_agent method (works with langchain 0.0.340)
+            # Use initialize_agent method (compatible with LangChain 0.1.0+)
             self.agent_executor = initialize_agent(
                 tools=tools,
                 llm=self.llm,

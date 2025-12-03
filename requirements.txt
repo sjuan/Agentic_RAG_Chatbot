@@ -1,8 +1,9 @@
-# Core Dependencies - Using base langchain without langchain-openai
-langchain==0.0.340
-# langchain-openai removed - using base langchain instead
-langchain-community==0.0.10
-langchain-core==0.1.10
+# Core Dependencies - Compatible with OpenAI 1.0+
+langchain==0.1.0
+langchain-openai==0.0.2
+langchain-community==0.0.13
+langchain-core==0.1.16
+langchain-text-splitters==0.0.1
 
 # Vector Store & Embeddings  
 faiss-cpu==1.7.4
