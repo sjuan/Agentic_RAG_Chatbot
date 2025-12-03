@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🤖 Enhanced Agentic RAG System - Hugging Face Spaces Deployment
+Enhanced Agentic RAG System - Hugging Face Spaces Deployment
 ================================================================
 
 This is the main entry point for Hugging Face Spaces.
