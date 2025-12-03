@@ -1,70 +1,57 @@
-import gradio as gr
-from huggingface_hub import InferenceClient
-
-
-def respond(
-    message,
-    history: list[dict[str, str]],
-    system_message,
-    max_tokens,
-    temperature,
-    top_p,
-    hf_token: gr.OAuthToken,
-):
-    """
-    For more information on `huggingface_hub` Inference API support, please check the docs: https://huggingface.co/docs/huggingface_hub/v0.22.2/en/guides/inference
-    """
-    client = InferenceClient(token=hf_token.token, model="openai/gpt-oss-20b")
-
-    messages = [{"role": "system", "content": system_message}]
-
-    messages.extend(history)
-
-    messages.append({"role": "user", "content": message})
-
-    response = ""
-
-    for message in client.chat_completion(
-        messages,
-        max_tokens=max_tokens,
-        stream=True,
-        temperature=temperature,
-        top_p=top_p,
-    ):
-        choices = message.choices
-        token = ""
-        if len(choices) and choices[0].delta.content:
-            token = choices[0].delta.content
-
-        response += token
-        yield response
-
-
+#!/usr/bin/env python3
 """
-For information on how to customize the ChatInterface, peruse the gradio docs: https://www.gradio.app/docs/chatinterface
+🤖 Enhanced Agentic RAG System - Hugging Face Spaces Deployment
+================================================================
+
+This is the main entry point for Hugging Face Spaces.
+The app uses Gradio for the web interface and supports multiple document formats.
+
+Author: Enhanced Agentic RAG Team
+Version: 4.0
+Deployed on: Hugging Face Spaces
 """
-chatbot = gr.ChatInterface(
-    respond,
-    type="messages",
-    additional_inputs=[
-        gr.Textbox(value="You are a friendly Chatbot.", label="System message"),
-        gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens"),
-        gr.Slider(minimum=0.1, maximum=4.0, value=0.7, step=0.1, label="Temperature"),
-        gr.Slider(
-            minimum=0.1,
-            maximum=1.0,
-            value=0.95,
-            step=0.05,
-            label="Top-p (nucleus sampling)",
-        ),
-    ],
+
+import os
+import sys
+
+# Set up logging before other imports
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-with gr.Blocks() as demo:
-    with gr.Sidebar():
-        gr.LoginButton()
-    chatbot.render()
+logger.info("🚀 Starting Enhanced Agentic RAG System on Hugging Face Spaces...")
 
+# Import the UI
+try:
+    from gradio_ui import create_ui
+    logger.info("✅ Successfully imported UI components")
+except ImportError as e:
+    logger.error(f"❌ Failed to import UI: {e}")
+    raise
 
+# Create the Gradio interface
+try:
+    demo = create_ui()
+    logger.info("✅ Gradio interface created successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to create UI: {e}")
+    raise
+
+# Launch the app
 if __name__ == "__main__":
-    demo.launch()
+    logger.info("🌐 Launching Gradio app on Hugging Face Spaces...")
+    
+    # Hugging Face Spaces configuration
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,  # Not needed on HF Spaces
+        show_error=True,
+        show_api=False  # Disable API docs for cleaner interface
+    )
+    
+    logger.info("✅ App launched successfully!")
+
