@@ -6,6 +6,7 @@ colorTo: blue
 sdk: gradio
 app_file: app.py
 pinned: false
+sdk_version: 6.0.2
 ---
 
 # 🤖 Enhanced Agentic RAG System
@@ -41,4 +42,3 @@ An intelligent document Q&A system with multi-format support (PDF, DOCX, TXT, PC
 - "Find and format the action items as a list"
 
 Built with LangChain, OpenAI, FAISS, and Gradio.
-
