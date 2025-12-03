@@ -20,12 +20,13 @@ scapy==2.5.0
 tavily-python==0.3.9
 wikipedia==1.4.0
 
-# UI - Gradio installed automatically by HF Spaces
-# gradio version managed by Hugging Face Spaces
+# UI - Gradio with compatible versions
+gradio==4.16.0
+gradio-client==0.8.1
 
 # Utilities
 python-dotenv==1.0.1
 
 # Compatibility fix for Gradio + huggingface_hub
-huggingface_hub<0.20
+huggingface_hub==0.19.4
 
