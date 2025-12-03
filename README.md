@@ -4,7 +4,7 @@ emoji: 🤖
 colorFrom: purple
 colorTo: blue
 sdk: gradio
-sdk_version: 4.44.0
+sdk_version: 6.0.2
 app_file: app.py
 pinned: false
 ---
@@ -42,4 +42,3 @@ An intelligent document Q&A system with multi-format support (PDF, DOCX, TXT, PC
 - "Find and format the action items as a list"
 
 Built with LangChain, OpenAI, FAISS, and Gradio.
-
