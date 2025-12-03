@@ -27,7 +27,7 @@ from collections import Counter
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# LangChain imports - NEW STYLE for langchain 0.1.0+ with OpenAI 1.0+
+# LangChain imports - NEW STYLE for langchain 0.2.x with OpenAI 1.0+
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
