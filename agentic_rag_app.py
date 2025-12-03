@@ -27,14 +27,18 @@ from collections import Counter
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# LangChain imports - MODERN STYLE
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.tools import Tool
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.prompts import PromptTemplate
+# LangChain imports - OLD STABLE STYLE for langchain 0.0.340
+from langchain.agents import initialize_agent, AgentType
+from langchain.tools import Tool
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain.memory import ConversationBufferMemory
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+# Import text splitter - compatible with older LangChain versions
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
 # Document loaders
@@ -541,8 +545,9 @@ class AgenticRAG:
         
         # Core components
         try:
-            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-            self.embeddings = OpenAIEmbeddings()
+            # Use newer OpenAI API (1.0+) compatible initialization
+            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=api_keys.get('openai'))
+            self.embeddings = OpenAIEmbeddings(openai_api_key=api_keys.get('openai'))
         except Exception as e:
             raise ValueError(f"Failed to initialize OpenAI components. Check your API key: {e}")
         
@@ -596,50 +601,25 @@ class AgenticRAG:
             logger.info(f"📚 Loaded {len(recent)} past conversations into agent memory")
     
     def _initialize_agent(self):
-        """Initialize agent using MODERN create_react_agent method."""
-        logger.info("🔧 Initializing agent with create_react_agent()...")
+        """Initialize agent using OLD initialize_agent method (compatible with 0.0.340)."""
+        logger.info("🔧 Initializing agent with initialize_agent()...")
         
         # Create tool list
         tools = self._create_tools()
         
-        # Create ReAct prompt template
-        template = '''Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Begin!
-
-Question: {input}
-Thought:{agent_scratchpad}'''
-        
-        prompt = PromptTemplate.from_template(template)
-        
         try:
-            # Create agent using modern method
-            agent = create_react_agent(self.llm, tools, prompt)
-            
-            # Create agent executor
-            self.agent_executor = AgentExecutor(
-                agent=agent,
+            # Use OLD initialize_agent method (works with langchain 0.0.340)
+            self.agent_executor = initialize_agent(
                 tools=tools,
+                llm=self.llm,
+                agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
                 verbose=True,
                 handle_parsing_errors=True,
                 max_iterations=6,
                 return_intermediate_steps=True
             )
             
-            logger.info(f"✅ Agent initialized with {len(tools)} tools (ReAct agent)")
+            logger.info(f"✅ Agent initialized with {len(tools)} tools (ZERO_SHOT_REACT agent)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize agent: {e}")
             raise
@@ -692,12 +672,13 @@ Example: 'Format: A, B, C' → input: 'A, B, C'."""
             )
         )
         
-        # 5. Web Search Tool (Tavily)
+        # 5. Web Search Tool (Tavily) - wrapped in Tool for compatibility
         if TAVILY_AVAILABLE and os.getenv('TAVILY_API_KEY'):
             try:
-                tavily_tool = TavilySearchResults(
-                    max_results=3,
+                tavily_search = TavilySearchResults(max_results=3)
+                tavily_tool = Tool(
                     name="WebSearch",
+                    func=tavily_search.run,
                     description="""Search the internet for current information. Use ONLY when user asks for 'latest', 'today', 'now', '2024', '2025', 'current', or 'recent' info.
 Input: Search query.
 Example: 'Latest Azure pricing' → input: 'Azure pricing 2024'."""
@@ -707,16 +688,17 @@ Example: 'Latest Azure pricing' → input: 'Azure pricing 2024'."""
             except Exception as e:
                 logger.warning(f"⚠️ Tavily tool failed: {e}")
         
-        # 6. Wikipedia Tool
+        # 6. Wikipedia Tool - wrapped in Tool for compatibility
         try:
-            wikipedia_tool = WikipediaQueryRun(
-                api_wrapper=WikipediaAPIWrapper(),
+            wiki_api = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+            wiki_tool = Tool(
                 name="Wikipedia",
+                func=wiki_api.run,
                 description="""Search Wikipedia for factual information.
 Input: Search topic.
 Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
             )
-            tools.append(wikipedia_tool)
+            tools.append(wiki_tool)
         except Exception as e:
             logger.warning(f"⚠️ Wikipedia tool failed: {e}")
         
@@ -745,8 +727,10 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
             )
             chunks = text_splitter.split_documents(documents)
             
-            # Create vector store
-            self.vectorstore = FAISS.from_documents(chunks, self.embeddings)
+            # Create vector store with proper embeddings
+            texts = [doc.page_content for doc in chunks]
+            metadatas = [doc.metadata for doc in chunks]
+            self.vectorstore = FAISS.from_texts(texts, self.embeddings, metadatas=metadatas)
             
             # Update document search tool
             self.doc_search_tool.update_vectorstore(self.vectorstore)

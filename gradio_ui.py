@@ -140,7 +140,7 @@ def initialize_system(openai_key: str, tavily_key: str = ""):
         """, gr.update(visible=False), gr.update(visible=True)
 
 
-def load_conversation_history() -> Tuple[List[Tuple[str, str]], str]:
+def load_conversation_history() -> Tuple[List[Dict], str]:
     """Load past conversation history."""
     if not rag_system:
         return [], "<div class='status-card status-error'>System not initialized</div>"
@@ -151,7 +151,11 @@ def load_conversation_history() -> Tuple[List[Tuple[str, str]], str]:
         if not history:
             return [], "<div class='status-card'>No previous conversations found.</div>"
         
-        chat_history = [(h.query, h.response) for h in history]
+        # Convert to new Gradio format with role/content dictionaries
+        chat_history = []
+        for h in history:
+            chat_history.append({"role": "user", "content": h.query})
+            chat_history.append({"role": "assistant", "content": h.response})
         
         status_msg = f"""
         <div class="status-card status-success">
@@ -203,10 +207,11 @@ def process_document_ui(file):
         return f"<div class='status-card status-error'>Error: {str(e)}</div>"
 
 
-def chat_ui(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], Dict]:
+def chat_ui(message: str, history: List[Dict]) -> Tuple[List[Dict], Dict]:
     """Handle chat interaction."""
     if not rag_system:
-        history.append((message, "❌ Please initialize the system first! Go to the setup tab and enter your API key."))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": "❌ Please initialize the system first! Go to the setup tab and enter your API key."})
         return history, {}
     
     if not message.strip():
@@ -220,11 +225,13 @@ def chat_ui(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[st
         if 'conversation_id' in result:
             metadata['conversation_id'] = result['conversation_id']
         
-        history.append((message, response))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": response})
         return history, metadata
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        history.append((message, f"❌ Error: {str(e)}"))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
         return history, {}
 
 
@@ -383,7 +390,8 @@ def get_conversation_stats() -> str:
 def create_ui():
     """Create the complete Gradio interface."""
     
-    with gr.Blocks(css=CUSTOM_CSS, title="🤖 Agentic RAG System") as demo:
+    # Create Gradio interface - CSS applied via theme
+    with gr.Blocks(title="🤖 Agentic RAG System") as demo:
         
         # Header
         gr.HTML("""
@@ -416,18 +424,16 @@ def create_ui():
                     label="OpenAI API Key (Required)",
                     type="password",
                     placeholder="sk-...",
-                    scale=3,
-                    info="Your OpenAI API key for GPT-3.5-turbo and embeddings"
+                    scale=3
                 )
                 tavily_key_input = gr.Textbox(
-                    label="Tavily API Key (Optional)",
+                    label="Tavily API Key (Optional - for web search)",
                     type="password",
                     placeholder="tvly-...",
-                    scale=3,
-                    info="Optional: Enables real-time web search"
+                    scale=3
                 )
             
-            init_button = gr.Button("🚀 Initialize System", variant="primary", size="lg")
+            init_button = gr.Button("🚀 Initialize System", variant="primary")
             init_status = gr.HTML()
         
         # Main Application (initially hidden)
@@ -452,7 +458,7 @@ def create_ui():
                                 file_types=[".pdf", ".docx", ".doc", ".txt", ".pcap", ".pcapng"]
                             )
                         with gr.Column(scale=1):
-                            process_btn = gr.Button("🔄 Process Document", variant="primary", size="lg")
+                            process_btn = gr.Button("🔄 Process Document", variant="primary")
                     
                     doc_status = gr.HTML()
                     
@@ -471,9 +477,7 @@ def create_ui():
                         with gr.Column(scale=3):
                             chatbot = gr.Chatbot(
                                 label="🤖 Conversation",
-                                height=500,
-                                show_copy_button=True,
-                                bubble_full_width=False
+                                height=500
                             )
                             
                             with gr.Row():
@@ -486,14 +490,14 @@ def create_ui():
                                 send_btn = gr.Button("📤 Send", variant="primary", scale=1)
                             
                             with gr.Row():
-                                clear_btn = gr.Button("🗑️ Clear Chat", size="sm")
-                                load_history_btn = gr.Button("📂 Load History", size="sm")
-                                export_btn = gr.Button("📥 Export Logs", size="sm")
+                                clear_btn = gr.Button("🗑️ Clear Chat")
+                                load_history_btn = gr.Button("📂 Load History")
+                                export_btn = gr.Button("📥 Export Logs")
                             
                             gr.Markdown("### 📊 Rate the Response")
                             with gr.Row():
-                                thumbs_up = gr.Button("👍 Helpful", size="sm")
-                                thumbs_down = gr.Button("👎 Not Helpful", size="sm")
+                                thumbs_up = gr.Button("👍 Helpful")
+                                thumbs_down = gr.Button("👎 Not Helpful")
                             
                             feedback_status = gr.HTML()
                         
@@ -566,7 +570,7 @@ def create_ui():
                 with gr.Tab("📊 Statistics"):
                     gr.Markdown("## 📈 System Statistics & Analytics")
                     
-                    refresh_stats_btn = gr.Button("🔄 Refresh Statistics", variant="primary", size="lg")
+                    refresh_stats_btn = gr.Button("🔄 Refresh Statistics", variant="primary")
                     stats_output = gr.HTML(value="<div class='status-card'>Click 'Refresh Statistics' to load data</div>")
                     
                     refresh_stats_btn.click(
