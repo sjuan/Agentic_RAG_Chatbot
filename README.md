@@ -1,4 +1,4 @@
-# 🤖 Enhanced Agentic RAG System v4.0
+# Enhanced Agentic RAG System v4.0
 
 A production-ready, intelligent document Q&A system powered by LangChain and OpenAI.
 
