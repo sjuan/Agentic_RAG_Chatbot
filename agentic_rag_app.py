@@ -546,8 +546,15 @@ class AgenticRAG:
         try:
             # Initialize without explicit API key - use environment variable instead
             # This avoids the 'proxies' parameter issue with older LangChain code paths
-            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-            self.embeddings = OpenAIEmbeddings()
+            # Configure with clean headers to avoid emoji encoding issues in httpx
+            self.llm = ChatOpenAI(
+                model="gpt-3.5-turbo", 
+                temperature=0,
+                default_headers={"User-Agent": "LangChain-OpenAI-Client"}
+            )
+            self.embeddings = OpenAIEmbeddings(
+                default_headers={"User-Agent": "LangChain-OpenAI-Client"}
+            )
         except Exception as e:
             raise ValueError(f"Failed to initialize OpenAI components. Check your API key: {e}")
         
