@@ -541,9 +541,10 @@ class AgenticRAG:
         
         # Core components
         try:
-            # Use newer OpenAI API (1.0+) compatible initialization
-            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=api_keys.get('openai'))
-            self.embeddings = OpenAIEmbeddings(openai_api_key=api_keys.get('openai'))
+            # Initialize without explicit API key - use environment variable instead
+            # This avoids the 'proxies' parameter issue with older LangChain code paths
+            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+            self.embeddings = OpenAIEmbeddings()
         except Exception as e:
             raise ValueError(f"Failed to initialize OpenAI components. Check your API key: {e}")
         
