@@ -236,7 +236,7 @@ class MultiFormatDocumentLoader:
             import pypdf
             pdf_reader = pypdf.PdfReader(file_path)
             if pdf_reader.metadata:
-                pdf_metadata = {
+                raw_metadata = {
                     'author': pdf_reader.metadata.get('/Author', ''),
                     'title': pdf_reader.metadata.get('/Title', ''),
                     'subject': pdf_reader.metadata.get('/Subject', ''),
@@ -244,44 +244,89 @@ class MultiFormatDocumentLoader:
                     'keywords': pdf_reader.metadata.get('/Keywords', ''),
                 }
                 # Clean up metadata (remove None, empty strings)
-                pdf_metadata = {k: v for k, v in pdf_metadata.items() if v}
+                pdf_metadata = {k: v for k, v in raw_metadata.items() if v}
+                
+                # VALIDATE metadata quality - filter out bad/generic values
+                bad_authors = ['user', 'unknown', 'author', 'untitled', 'admin', 'default']
+                bad_title_patterns = ['.book', '.pdf', 'untitled', 'document']
+                
+                if 'author' in pdf_metadata:
+                    author_lower = pdf_metadata['author'].lower()
+                    if author_lower in bad_authors or len(pdf_metadata['author']) < 3:
+                        logger.warning(f"⚠️ Ignoring generic author metadata: '{pdf_metadata['author']}'")
+                        del pdf_metadata['author']
+                
+                if 'title' in pdf_metadata:
+                    title_lower = pdf_metadata['title'].lower()
+                    if any(bad in title_lower for bad in bad_title_patterns) or len(pdf_metadata['title']) < 5:
+                        logger.warning(f"⚠️ Ignoring generic title metadata: '{pdf_metadata['title']}'")
+                        del pdf_metadata['title']
+                
                 if pdf_metadata:
-                    logger.info(f"📋 Extracted PDF metadata: {pdf_metadata}")
+                    logger.info(f"📋 Valid PDF metadata: {pdf_metadata}")
                 else:
-                    logger.info("📋 No PDF metadata found in file properties")
+                    logger.info("📋 PDF metadata exists but appears invalid/generic")
         except Exception as e:
             logger.warning(f"⚠️ Could not extract PDF metadata: {e}")
         
-        # Try to extract author/title from first few pages if metadata is missing
+        # Try to extract author/title from first few pages if metadata is missing/invalid
         extracted_info = {}
-        if not pdf_metadata and len(pages) > 0:
+        if len(pages) > 0:
             import re
-            # Combine first 3 pages to search for author/title
-            first_pages_text = "\n".join([p.page_content for p in pages[:3]])
+            # Focus on first 5 pages for author/title (but skip ads at end)
+            first_pages_text = "\n".join([p.page_content for p in pages[:5]])
             
-            # Look for author patterns
+            # Look for author patterns - prioritize early pages
             author_patterns = [
-                r'[Bb]y\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',  # "by Author Name"
+                r'(?:^|\n)([A-Z][a-z]+\s+[A-Z]\.?\s+[A-Z][a-z]+)\s*\n',  # "Chris P. Sanders\n"
+                r'[Bb]y\s+([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?(?:\s+[A-Z][a-z]+)+)',  # "by Chris Sanders"
+                r'[Ww]ritten\s+by\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',  # "Written by Name"
                 r'[Aa]uthor[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',  # "Author: Name"
-                r'([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\n.*(?:[Aa]uthor)',  # "Name\n...author"
             ]
             
-            for pattern in author_patterns:
-                match = re.search(pattern, first_pages_text)
-                if match:
-                    extracted_info['author'] = match.group(1).strip()
-                    logger.info(f"📝 Extracted author from content: {extracted_info['author']}")
-                    break
+            # Also look in acknowledgments for author's full name
+            if 'acknowledgments' in first_pages_text.lower() or len(pages) > 15:
+                # Check acknowledgments page (often around page 10-20)
+                ack_text = "\n".join([p.page_content for p in pages[10:20]])
+                # Look for pattern like "my loving parents, Kenneth and Judy Sanders"
+                parent_match = re.search(r'parents?,\s+([A-Z][a-z]+)\s+and\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)', ack_text)
+                if parent_match:
+                    # Last name is likely the author's last name
+                    last_name = parent_match.group(3)
+                    # Look for first name with this last name on earlier pages
+                    name_match = re.search(rf'([A-Z][a-z]+)\s+{last_name}', first_pages_text)
+                    if name_match:
+                        extracted_info['author'] = f"{name_match.group(1)} {last_name}"
+                        logger.info(f"📝 Extracted author from acknowledgments: {extracted_info['author']}")
             
-            # Look for title on first page (usually the longest line in title case)
+            # Try regular patterns if not found yet
+            if 'author' not in extracted_info:
+                for pattern in author_patterns:
+                    match = re.search(pattern, first_pages_text)
+                    if match:
+                        author_name = match.group(1).strip()
+                        # Filter out generic names or single words
+                        if len(author_name.split()) >= 2 and author_name.lower() not in ['no starch', 'press inc']:
+                            extracted_info['author'] = author_name
+                            logger.info(f"📝 Extracted author from content: {extracted_info['author']}")
+                            break
+            
+            # Look for title on first page (usually one of the first prominent lines)
             if pages[0].page_content:
                 lines = [line.strip() for line in pages[0].page_content.split('\n') if line.strip()]
-                # Find lines that look like titles (title case, reasonable length)
-                title_candidates = [
-                    line for line in lines[:10]  # First 10 lines
-                    if 10 < len(line) < 100 and line[0].isupper() and not line.endswith('.')
-                ]
+                # Find lines that look like titles (title case, reasonable length, no special chars)
+                title_candidates = []
+                for line in lines[:15]:  # First 15 lines
+                    # Title criteria: 10-80 chars, starts uppercase, mostly letters, not all caps
+                    if (10 < len(line) < 80 and 
+                        line[0].isupper() and 
+                        not line.endswith('.') and
+                        not line.isupper() and
+                        sum(c.isalpha() for c in line) > len(line) * 0.6):
+                        title_candidates.append(line)
+                
                 if title_candidates:
+                    # Take the first good candidate
                     extracted_info['title'] = title_candidates[0]
                     logger.info(f"📝 Extracted title from content: {extracted_info['title']}")
         
