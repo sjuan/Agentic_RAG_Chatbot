@@ -311,24 +311,46 @@ class MultiFormatDocumentLoader:
                             logger.info(f"📝 Extracted author from content: {extracted_info['author']}")
                             break
             
-            # Look for title on first page (usually one of the first prominent lines)
-            if pages[0].page_content:
+            # Look for title with multiple strategies
+            if 'title' not in extracted_info and pages[0].page_content:
                 lines = [line.strip() for line in pages[0].page_content.split('\n') if line.strip()]
-                # Find lines that look like titles (title case, reasonable length, no special chars)
-                title_candidates = []
-                for line in lines[:15]:  # First 15 lines
-                    # Title criteria: 10-80 chars, starts uppercase, mostly letters, not all caps
-                    if (10 < len(line) < 80 and 
-                        line[0].isupper() and 
-                        not line.endswith('.') and
-                        not line.isupper() and
-                        sum(c.isalpha() for c in line) > len(line) * 0.6):
-                        title_candidates.append(line)
                 
-                if title_candidates:
-                    # Take the first good candidate
-                    extracted_info['title'] = title_candidates[0]
-                    logger.info(f"📝 Extracted title from content: {extracted_info['title']}")
+                # Strategy 1: Look for ALL CAPS title (common for book titles)
+                for line in lines[:20]:
+                    if (5 < len(line) < 60 and 
+                        line.isupper() and 
+                        sum(c.isalpha() for c in line) > len(line) * 0.5 and
+                        line.count(' ') >= 1):  # At least 2 words
+                        extracted_info['title'] = line.title()  # Convert to Title Case
+                        logger.info(f"📝 Extracted title (ALL CAPS) from content: {extracted_info['title']}")
+                        break
+                
+                # Strategy 2: Look for title pattern on its own line (short, prominent)
+                if 'title' not in extracted_info:
+                    for i, line in enumerate(lines[:10]):
+                        # Title is usually: 3-6 words, on its own line, near top
+                        word_count = len(line.split())
+                        if (3 <= word_count <= 6 and
+                            15 < len(line) < 60 and
+                            not line.endswith(('.', '?', '!')) and
+                            not any(char.isdigit() for char in line) and
+                            sum(c.isalpha() or c.isspace() for c in line) > len(line) * 0.8):
+                            # Check if next line is empty or very different (confirms standalone title)
+                            if i + 1 < len(lines) and (not lines[i+1] or len(lines[i+1]) > len(line) * 1.5):
+                                extracted_info['title'] = line
+                                logger.info(f"📝 Extracted title (standalone) from content: {extracted_info['title']}")
+                                break
+                
+                # Strategy 3: Check colophon at end (often has full title)
+                if 'title' not in extracted_info and len(pages) > 10:
+                    # Check last few pages for colophon
+                    last_pages = "\n".join([p.page_content for p in pages[-5:]])
+                    if 'colophon' in last_pages.lower() or 'was laid out' in last_pages.lower():
+                        # Look for pattern: "Title Name was laid out" or "Title Name was printed"
+                        colophon_match = re.search(r'^([A-Z][a-zA-Z\s]{10,50}?)\s+was\s+(?:laid out|printed)', last_pages, re.MULTILINE)
+                        if colophon_match:
+                            extracted_info['title'] = colophon_match.group(1).strip()
+                            logger.info(f"📝 Extracted title (colophon) from content: {extracted_info['title']}")
         
         # Merge extracted info with PDF metadata
         combined_metadata = {**extracted_info, **pdf_metadata}  # PDF metadata takes precedence
