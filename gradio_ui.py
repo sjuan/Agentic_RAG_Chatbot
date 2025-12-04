@@ -140,7 +140,7 @@ def initialize_system(openai_key: str, tavily_key: str = ""):
         """, gr.update(visible=False), gr.update(visible=True)
 
 
-def load_conversation_history() -> Tuple[List[Dict], str]:
+def load_conversation_history() -> Tuple[List[Tuple[str, str]], str]:
     """Load past conversation history."""
     if not rag_system:
         return [], "<div class='status-card status-error'>System not initialized</div>"
@@ -151,11 +151,8 @@ def load_conversation_history() -> Tuple[List[Dict], str]:
         if not history:
             return [], "<div class='status-card'>No previous conversations found.</div>"
         
-        # Convert to new Gradio format with role/content dictionaries
-        chat_history = []
-        for h in history:
-            chat_history.append({"role": "user", "content": h.query})
-            chat_history.append({"role": "assistant", "content": h.response})
+        # Gradio 4.16.0 uses tuple format
+        chat_history = [(h.query, h.response) for h in history]
         
         status_msg = f"""
         <div class="status-card status-success">
@@ -207,11 +204,10 @@ def process_document_ui(file):
         return f"<div class='status-card status-error'>Error: {str(e)}</div>"
 
 
-def chat_ui(message: str, history: List[Dict]) -> Tuple[List[Dict], Dict]:
+def chat_ui(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], Dict]:
     """Handle chat interaction."""
     if not rag_system:
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": "❌ Please initialize the system first! Go to the setup tab and enter your API key."})
+        history.append((message, "❌ Please initialize the system first! Go to the setup tab and enter your API key."))
         return history, {}
     
     if not message.strip():
@@ -225,13 +221,11 @@ def chat_ui(message: str, history: List[Dict]) -> Tuple[List[Dict], Dict]:
         if 'conversation_id' in result:
             metadata['conversation_id'] = result['conversation_id']
         
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": response})
+        history.append((message, response))
         return history, metadata
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
+        history.append((message, f"❌ Error: {str(e)}"))
         return history, {}
 
 
