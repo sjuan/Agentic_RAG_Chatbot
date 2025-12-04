@@ -223,7 +223,7 @@ class MultiFormatDocumentLoader:
     
     @staticmethod
     def _load_pdf(file_path: str) -> Tuple[List[Document], Dict[str, Any]]:
-        """Load PDF document with metadata extraction."""
+        """Load PDF document with enhanced metadata and title page extraction."""
         logger.info(f"📄 Loading PDF: {file_path}")
         
         # Load pages
@@ -245,23 +245,62 @@ class MultiFormatDocumentLoader:
                 }
                 # Clean up metadata (remove None, empty strings)
                 pdf_metadata = {k: v for k, v in pdf_metadata.items() if v}
-                logger.info(f"📋 Extracted PDF metadata: {pdf_metadata}")
+                if pdf_metadata:
+                    logger.info(f"📋 Extracted PDF metadata: {pdf_metadata}")
+                else:
+                    logger.info("📋 No PDF metadata found in file properties")
         except Exception as e:
             logger.warning(f"⚠️ Could not extract PDF metadata: {e}")
         
-        # Create metadata document if we have PDF metadata
-        if pdf_metadata:
-            metadata_text = "DOCUMENT METADATA:\n"
-            if 'title' in pdf_metadata:
-                metadata_text += f"Title: {pdf_metadata['title']}\n"
-            if 'author' in pdf_metadata:
-                metadata_text += f"Author: {pdf_metadata['author']}\n"
-            if 'subject' in pdf_metadata:
-                metadata_text += f"Subject: {pdf_metadata['subject']}\n"
-            if 'keywords' in pdf_metadata:
-                metadata_text += f"Keywords: {pdf_metadata['keywords']}\n"
-            if 'creator' in pdf_metadata:
-                metadata_text += f"Created with: {pdf_metadata['creator']}\n"
+        # Try to extract author/title from first few pages if metadata is missing
+        extracted_info = {}
+        if not pdf_metadata and len(pages) > 0:
+            import re
+            # Combine first 3 pages to search for author/title
+            first_pages_text = "\n".join([p.page_content for p in pages[:3]])
+            
+            # Look for author patterns
+            author_patterns = [
+                r'[Bb]y\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',  # "by Author Name"
+                r'[Aa]uthor[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',  # "Author: Name"
+                r'([A-Z][a-z]+\s+[A-Z][a-z]+)\s*\n.*(?:[Aa]uthor)',  # "Name\n...author"
+            ]
+            
+            for pattern in author_patterns:
+                match = re.search(pattern, first_pages_text)
+                if match:
+                    extracted_info['author'] = match.group(1).strip()
+                    logger.info(f"📝 Extracted author from content: {extracted_info['author']}")
+                    break
+            
+            # Look for title on first page (usually the longest line in title case)
+            if pages[0].page_content:
+                lines = [line.strip() for line in pages[0].page_content.split('\n') if line.strip()]
+                # Find lines that look like titles (title case, reasonable length)
+                title_candidates = [
+                    line for line in lines[:10]  # First 10 lines
+                    if 10 < len(line) < 100 and line[0].isupper() and not line.endswith('.')
+                ]
+                if title_candidates:
+                    extracted_info['title'] = title_candidates[0]
+                    logger.info(f"📝 Extracted title from content: {extracted_info['title']}")
+        
+        # Merge extracted info with PDF metadata
+        combined_metadata = {**extracted_info, **pdf_metadata}  # PDF metadata takes precedence
+        
+        # Create metadata document if we have any info
+        if combined_metadata:
+            metadata_text = "=== DOCUMENT INFORMATION ===\n\n"
+            if 'title' in combined_metadata:
+                metadata_text += f"📖 Title: {combined_metadata['title']}\n\n"
+            if 'author' in combined_metadata:
+                metadata_text += f"✍️ Author: {combined_metadata['author']}\n\n"
+            if 'subject' in combined_metadata:
+                metadata_text += f"📋 Subject: {combined_metadata['subject']}\n\n"
+            if 'keywords' in combined_metadata:
+                metadata_text += f"🔑 Keywords: {combined_metadata['keywords']}\n\n"
+            
+            metadata_text += "This information was extracted from the document metadata and title page."
             
             # Insert metadata as first "page"
             metadata_doc = Document(
@@ -269,12 +308,27 @@ class MultiFormatDocumentLoader:
                 metadata={'source': file_path, 'page': 0, 'type': 'metadata'}
             )
             pages.insert(0, metadata_doc)
+            logger.info(f"✅ Created searchable metadata chunk with {len(combined_metadata)} fields")
+        else:
+            logger.warning("⚠️ No metadata or title/author found in document")
+        
+        # Also enhance first page with explicit labels if we found info
+        if len(pages) > 1 and combined_metadata:
+            first_content_page = pages[1]  # After metadata doc
+            if 'title' in combined_metadata or 'author' in combined_metadata:
+                enhanced_content = "=== TITLE PAGE ===\n\n"
+                if 'title' in combined_metadata:
+                    enhanced_content += f"Book Title: {combined_metadata['title']}\n"
+                if 'author' in combined_metadata:
+                    enhanced_content += f"Written by: {combined_metadata['author']}\n"
+                enhanced_content += "\n" + first_content_page.page_content
+                first_content_page.page_content = enhanced_content
         
         metadata = {
             'format': 'PDF',
             'pages': len(pages),
             'filename': Path(file_path).name,
-            **pdf_metadata  # Include PDF metadata in document metadata
+            **combined_metadata  # Include all metadata
         }
         
         return pages, metadata
