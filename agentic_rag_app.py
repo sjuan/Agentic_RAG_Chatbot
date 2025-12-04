@@ -223,15 +223,58 @@ class MultiFormatDocumentLoader:
     
     @staticmethod
     def _load_pdf(file_path: str) -> Tuple[List[Document], Dict[str, Any]]:
-        """Load PDF document."""
+        """Load PDF document with metadata extraction."""
         logger.info(f"📄 Loading PDF: {file_path}")
+        
+        # Load pages
         loader = PyPDFLoader(file_path)
         pages = loader.load()
+        
+        # Extract PDF metadata (author, title, etc.)
+        pdf_metadata = {}
+        try:
+            import pypdf
+            pdf_reader = pypdf.PdfReader(file_path)
+            if pdf_reader.metadata:
+                pdf_metadata = {
+                    'author': pdf_reader.metadata.get('/Author', ''),
+                    'title': pdf_reader.metadata.get('/Title', ''),
+                    'subject': pdf_reader.metadata.get('/Subject', ''),
+                    'creator': pdf_reader.metadata.get('/Creator', ''),
+                    'keywords': pdf_reader.metadata.get('/Keywords', ''),
+                }
+                # Clean up metadata (remove None, empty strings)
+                pdf_metadata = {k: v for k, v in pdf_metadata.items() if v}
+                logger.info(f"📋 Extracted PDF metadata: {pdf_metadata}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not extract PDF metadata: {e}")
+        
+        # Create metadata document if we have PDF metadata
+        if pdf_metadata:
+            metadata_text = "DOCUMENT METADATA:\n"
+            if 'title' in pdf_metadata:
+                metadata_text += f"Title: {pdf_metadata['title']}\n"
+            if 'author' in pdf_metadata:
+                metadata_text += f"Author: {pdf_metadata['author']}\n"
+            if 'subject' in pdf_metadata:
+                metadata_text += f"Subject: {pdf_metadata['subject']}\n"
+            if 'keywords' in pdf_metadata:
+                metadata_text += f"Keywords: {pdf_metadata['keywords']}\n"
+            if 'creator' in pdf_metadata:
+                metadata_text += f"Created with: {pdf_metadata['creator']}\n"
+            
+            # Insert metadata as first "page"
+            metadata_doc = Document(
+                page_content=metadata_text,
+                metadata={'source': file_path, 'page': 0, 'type': 'metadata'}
+            )
+            pages.insert(0, metadata_doc)
         
         metadata = {
             'format': 'PDF',
             'pages': len(pages),
-            'filename': Path(file_path).name
+            'filename': Path(file_path).name,
+            **pdf_metadata  # Include PDF metadata in document metadata
         }
         
         return pages, metadata
@@ -372,7 +415,7 @@ class DocumentSearchTool:
         self.vectorstore = vectorstore
     
     def search(self, query: str) -> str:
-        """Search the uploaded document for relevant information."""
+        """Search the uploaded document for relevant information with improved coverage."""
         if not self.vectorstore:
             return "No document has been uploaded yet. Please upload a document first."
         
@@ -380,18 +423,27 @@ class DocumentSearchTool:
             return "Query too short. Please provide a more specific search term."
         
         try:
-            # Search for relevant documents
-            docs = self.vectorstore.similarity_search(query, k=4)
+            # Search for relevant documents with more results
+            docs = self.vectorstore.similarity_search(query, k=6)
             
             if not docs:
                 return "No relevant information found in the document."
             
-            # Format results
+            # Format results with better context
             results = []
             for i, doc in enumerate(docs, 1):
-                page = doc.metadata.get('page', doc.metadata.get('source', 'N/A'))
-                content = doc.page_content[:300]  # First 300 chars
-                results.append(f"[Source {i} - {page}]\n{content}...")
+                page = doc.metadata.get('page', 'N/A')
+                doc_type = doc.metadata.get('type', '')
+                
+                # Show more content for metadata chunks
+                if doc_type == 'metadata':
+                    content = doc.page_content  # Full metadata
+                    results.append(f"[Document Metadata]\n{content}")
+                else:
+                    content = doc.page_content[:400]  # Show more content
+                    if len(doc.page_content) > 400:
+                        content += "..."
+                    results.append(f"[Source {i} - Page {page}]\n{content}")
             
             return "\n\n".join(results)
         
@@ -640,9 +692,11 @@ class AgenticRAG:
             Tool(
                 name="DocumentSearch",
                 func=self.doc_search_tool.search,
-                description="""Search uploaded documents (PDF, DOCX, TXT, PCAP). Use when user asks about 'the document', 'the file', or 'uploaded content'.
-Input: search keywords (e.g., 'databases', 'Azure Storage').
-Example: 'What does the document say about X?' → input: 'X'."""
+                description="""Search uploaded documents (PDF, DOCX, TXT, PCAP) including metadata (author, title, etc.). Use for ANY question about the document content.
+Input: search keywords or phrases (e.g., 'author', 'title', 'main topic', specific terms).
+Returns: Relevant excerpts including document metadata.
+Example: 'Who is the author?' → input: 'author'
+Example: 'What is this about?' → input: 'main topic summary'"""
             )
         )
         
@@ -726,11 +780,11 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
                     'error': 'No content extracted from document'
                 }
             
-            # Split into chunks
+            # Split into chunks with better overlap for comprehensive coverage
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                separators=["\n\n", "\n", " ", ""]
+                chunk_size=1200,  # Slightly larger chunks for better context
+                chunk_overlap=300,  # More overlap to avoid losing info at boundaries
+                separators=["\n\n", "\n", ".", " ", ""]  # Split at paragraphs, sentences, then words
             )
             chunks = text_splitter.split_documents(documents)
             
