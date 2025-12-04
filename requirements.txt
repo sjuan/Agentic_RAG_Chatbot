@@ -28,6 +28,7 @@ gradio-client==0.8.1
 # Utilities
 python-dotenv==1.0.1
 
-# Compatibility fix for Gradio + huggingface_hub
+# Compatibility fixes
 huggingface_hub==0.19.4
+httpx==0.27.2  # Critical: 0.28.0+ removed 'proxies' argument causing initialization errors
 
