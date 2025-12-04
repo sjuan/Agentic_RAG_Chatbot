@@ -24,6 +24,9 @@ from pathlib import Path
 import warnings
 from collections import Counter
 
+# Force UTF-8 encoding to handle emojis in logs/metadata
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
