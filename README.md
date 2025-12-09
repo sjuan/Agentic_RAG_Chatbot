@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ---
 title: Agentic RAG Chatbot
 emoji: 🤖
@@ -11,6 +12,9 @@ license: mit
 ---
 
 # 🤖 Enhanced Agentic RAG System v4.0
+=======
+# Enhanced Agentic RAG System v4.0
+>>>>>>> 10590514240d8c2583e8752b82090ebf8934d5f1
 
 A production-ready, intelligent document Q&A system powered by LangChain and OpenAI.
 
