@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ---
 title: Agentic RAG Chatbot
 emoji: 🤖
@@ -12,9 +11,6 @@ license: mit
 ---
 
 # 🤖 Enhanced Agentic RAG System v4.0
-=======
-# Enhanced Agentic RAG System v4.0
->>>>>>> 10590514240d8c2583e8752b82090ebf8934d5f1
 
 A production-ready, intelligent document Q&A system powered by LangChain and OpenAI.
 
@@ -118,7 +114,7 @@ Formats data as bullet points or lists.
 **Example:** "Format these items: A, B, C"
 
 ### 5. WebSearch 🌐
-Searches the internet for current information (requires Tavily API key).
+Searches the internet for current information (requires Tavily API key). **All web search results include explicit source citations with URLs for verifiable grounding.**
 
 **Example:** "What are the latest Azure pricing updates?"
 
@@ -173,6 +169,54 @@ Agent:
 └──────┘ └──────┘  └────────┘ └─────────┘ └──────┘
 ```
 
+## 🔗 Explicit Grounding & Source Citations
+
+This system implements **explicit grounding** for all web search results, ensuring that information is traceable and verifiable.
+
+### How Explicit Grounding Works
+
+1. **Source Preservation**: When the WebSearch tool is used, all source URLs and titles are automatically captured and stored.
+
+2. **Citation Formatting**: Search results are formatted with citation markers `[Source X]` that include:
+   - Source title
+   - Source URL
+   - Relevant content excerpt
+
+3. **Automatic Citation**: The system automatically:
+   - Extracts sources from web search tool usage
+   - Verifies that responses cite sources properly
+   - Adds source citations to responses if missing
+   - Displays grounding status in the UI
+
+4. **Grounding Verification**: The system checks:
+   - ✅ Whether citations are present in responses
+   - ✅ Whether URLs are included
+   - ✅ Citation count and source usage
+   - ✅ Displays grounding status (✅ Grounded / ⚠️ Not Fully Grounded)
+
+5. **Source Display**: All sources are displayed in the Agent Reasoning panel with:
+   - Clickable source URLs
+   - Source titles
+   - Organized source list
+
+### Benefits of Explicit Grounding
+
+- **Verifiable**: Every claim can be traced back to its source
+- **Transparent**: Users can see exactly which sources were used
+- **Trustworthy**: Grounding status indicates citation quality
+- **Compliant**: Proper source attribution for all web-sourced information
+
+### Example
+
+When you ask: *"What are the latest Azure pricing updates?"*
+
+The system will:
+1. Use WebSearch tool to find current information
+2. Format results with `[Source 1]`, `[Source 2]`, etc.
+3. Generate a response that cites these sources
+4. Display all sources with clickable URLs in the UI
+5. Show grounding status: ✅ Grounded (3 citations)
+
 ## 🔐 Security & Privacy
 
 ### API Key Security
@@ -186,6 +230,18 @@ Agent:
 - ✅ Conversations saved locally in JSON
 - ✅ No third-party data sharing
 - ✅ You control all data retention
+
+### Data Usage & AI Training
+
+**Important**: Your uploaded documents and analyzed data are **NOT used to train AI models**.
+
+- ✅ **No Training Data**: OpenAI and Tavily do not use your data for training their models
+- ✅ **API-Only Usage**: Your data is sent only to process your specific requests via API calls
+- ✅ **No Data Retention**: API providers do not retain your documents or conversations for training purposes
+- ✅ **Privacy Protected**: All document processing is done locally; only search queries (not documents) are sent to web search APIs
+- ✅ **Session-Based**: Your data remains in your local session and is not shared with third parties
+
+This system uses OpenAI's API under their [data usage policy](https://openai.com/api/policies/data-usage/), which states that data sent via API is not used for training. Tavily's web search API also does not use your queries for training purposes.
 
 ## 📝 File Structure
 
