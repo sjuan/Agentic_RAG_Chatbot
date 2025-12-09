@@ -652,6 +652,66 @@ class TextAnalysisTool:
             return f"Error analyzing text: {str(e)}"
 
 
+class GroundedTavilySearchTool:
+    """Custom Tavily search tool that preserves source URLs for explicit grounding."""
+    
+    def __init__(self, max_results: int = 3):
+        """Initialize the grounded Tavily search tool."""
+        if not TAVILY_AVAILABLE:
+            raise ImportError("Tavily is not available. Install: pip install tavily-python")
+        self.tavily_search = TavilySearchResults(max_results=max_results)
+        self.last_search_sources = []  # Store sources from last search
+    
+    def search(self, query: str) -> str:
+        """
+        Search the web using Tavily and format results with source citations.
+        Returns formatted results with URLs for explicit grounding.
+        """
+        try:
+            # Perform search
+            results = self.tavily_search.run(query)
+            
+            # Reset sources for this search
+            self.last_search_sources = []
+            
+            if not results:
+                return "No search results found."
+            
+            # Format results with explicit source citations
+            formatted_results = []
+            for i, result in enumerate(results, 1):
+                # Extract URL and content
+                url = result.get('url', 'Unknown source')
+                title = result.get('title', 'No title')
+                content = result.get('content', '')
+                
+                # Store source for later citation
+                self.last_search_sources.append({
+                    'url': url,
+                    'title': title,
+                    'index': i
+                })
+                
+                # Format with citation marker
+                formatted_result = f"[Source {i}] {title}\nURL: {url}\nContent: {content[:500]}"
+                if len(content) > 500:
+                    formatted_result += "..."
+                formatted_results.append(formatted_result)
+            
+            # Add explicit instruction for citation
+            citation_note = "\n\n⚠️ IMPORTANT: When using this information in your response, you MUST cite the source using [Source X] format and include the URL."
+            
+            return "\n\n".join(formatted_results) + citation_note
+        
+        except Exception as e:
+            logger.error(f"Error in Tavily search: {e}")
+            return f"Error performing web search: {str(e)}"
+    
+    def get_last_sources(self) -> List[Dict[str, Any]]:
+        """Get sources from the last search."""
+        return self.last_search_sources.copy()
+
+
 class DataFormatterTool:
     """Custom tool for data formatting and conversion."""
     
@@ -742,6 +802,15 @@ class AgenticRAG:
         self.calculator_tool = PythonCalculatorTool()
         self.text_analysis_tool = TextAnalysisTool()
         self.data_formatter_tool = DataFormatterTool()
+        
+        # Grounded Tavily search tool (if available)
+        self.grounded_tavily_tool = None
+        if TAVILY_AVAILABLE and os.getenv('TAVILY_API_KEY'):
+            try:
+                self.grounded_tavily_tool = GroundedTavilySearchTool(max_results=3)
+                logger.info("✅ Grounded Tavily search tool initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize grounded Tavily tool: {e}")
         
         # Conversation memory for agent
         self.agent_memory = ConversationBufferMemory(
@@ -854,21 +923,25 @@ Example: 'Format: A, B, C' → input: 'A, B, C'."""
             )
         )
         
-        # 5. Web Search Tool (Tavily) - wrapped in Tool for compatibility
-        if TAVILY_AVAILABLE and os.getenv('TAVILY_API_KEY'):
+        # 5. Web Search Tool (Tavily) - with explicit grounding
+        if self.grounded_tavily_tool:
             try:
-                tavily_search = TavilySearchResults(max_results=3)
                 tavily_tool = Tool(
                     name="WebSearch",
-                    func=tavily_search.run,
+                    func=self.grounded_tavily_tool.search,
                     description="""Search the internet for current information. Use ONLY when user asks for 'latest', 'today', 'now', '2024', '2025', 'current', or 'recent' info.
+
+CRITICAL: When you use this tool, you MUST cite sources in your final answer using [Source X] format and include URLs. 
+Your response must be grounded in the search results provided. Do not make claims not supported by the search results.
+
 Input: Search query.
-Example: 'Latest Azure pricing' → input: 'Azure pricing 2024'."""
+Example: 'Latest Azure pricing' → input: 'Azure pricing 2024'.
+Returns: Search results with source URLs - you MUST cite these in your answer."""
                 )
                 tools.append(tavily_tool)
-                logger.info("✅ Tavily WebSearch tool added")
+                logger.info("✅ Grounded Tavily WebSearch tool added")
             except Exception as e:
-                logger.warning(f"⚠️ Tavily tool failed: {e}")
+                logger.warning(f"⚠️ Grounded Tavily tool failed: {e}")
         
         # 6. Wikipedia Tool - wrapped in Tool for compatibility
         try:
@@ -945,18 +1018,119 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
                 'error': str(e)
             }
     
+    def _extract_web_search_sources(self, intermediate_steps: List) -> List[Dict[str, Any]]:
+        """Extract source URLs from WebSearch tool usage."""
+        sources = []
+        
+        for step in intermediate_steps:
+            if len(step) >= 2:
+                action, observation = step[0], step[1]
+                tool_name = action.tool if hasattr(action, 'tool') else 'Unknown'
+                
+                if tool_name == 'WebSearch' and self.grounded_tavily_tool:
+                    # Get sources from the last search
+                    search_sources = self.grounded_tavily_tool.get_last_sources()
+                    sources.extend(search_sources)
+        
+        # Remove duplicates based on URL
+        seen_urls = set()
+        unique_sources = []
+        for source in sources:
+            if source['url'] not in seen_urls:
+                seen_urls.add(source['url'])
+                unique_sources.append(source)
+        
+        return unique_sources
+    
+    def _verify_grounding(self, response: str, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Verify that the response is grounded in the provided sources.
+        Returns grounding verification results.
+        """
+        if not sources:
+            return {
+                'is_grounded': True,  # No sources to verify against
+                'has_citations': False,
+                'citation_count': 0,
+                'sources_used': []
+            }
+        
+        # Check for citation markers in response
+        import re
+        citation_pattern = r'\[Source\s+(\d+)\]'
+        citations_found = re.findall(citation_pattern, response)
+        
+        # Check if URLs are mentioned
+        url_pattern = r'https?://[^\s\)]+'
+        urls_found = re.findall(url_pattern, response)
+        
+        # Determine which sources were actually cited
+        cited_indices = [int(c) for c in citations_found if c.isdigit()]
+        sources_used = [s for s in sources if s['index'] in cited_indices]
+        
+        # Grounding is verified if:
+        # 1. Sources were provided AND
+        # 2. (Citations found OR URLs found)
+        is_grounded = len(sources) > 0 and (len(citations_found) > 0 or len(urls_found) > 0)
+        
+        return {
+            'is_grounded': is_grounded,
+            'has_citations': len(citations_found) > 0,
+            'has_urls': len(urls_found) > 0,
+            'citation_count': len(citations_found),
+            'sources_used': sources_used,
+            'all_sources': sources
+        }
+    
+    def _format_sources_section(self, sources: List[Dict[str, Any]]) -> str:
+        """Format sources as a citations section."""
+        if not sources:
+            return ""
+        
+        citations_section = "\n\n---\n### 📚 Sources:\n\n"
+        for source in sources:
+            citations_section += f"**{source.get('title', 'Untitled')}**\n"
+            citations_section += f"🔗 {source.get('url', 'No URL')}\n\n"
+        
+        return citations_section
+    
+    def _enhance_response_with_sources(self, response: str, sources: List[Dict[str, Any]], 
+                                      grounding_info: Dict[str, Any]) -> str:
+        """
+        Enhance response with explicit source citations if missing.
+        """
+        if not sources:
+            return response
+        
+        # Check if response already has citations
+        import re
+        citation_pattern = r'\[Source\s+\d+\]'
+        has_citations = bool(re.search(citation_pattern, response))
+        
+        # If no citations found but sources exist, add them
+        if not has_citations and sources:
+            # Add a note about sources
+            response += "\n\n*Note: Information retrieved from web search. Sources listed below.*"
+        
+        # Always append sources section
+        response += self._format_sources_section(sources)
+        
+        return response
+    
     def chat(self, query: str) -> Dict[str, Any]:
-        """Main chat interface."""
+        """Main chat interface with explicit grounding support."""
         if not self.agent_executor:
             return {
                 "response": "❌ Agent not initialized properly.",
-                "metadata": {"error": "Agent initialization failed"}
+                "metadata": {"error": "Agent initialization failed"},
+                "sources": []
             }
         
         if not query or len(query.strip()) < 2:
             return {
                 "response": "Please provide a valid question.",
-                "metadata": {"error": "Empty query"}
+                "metadata": {"error": "Empty query"},
+                "sources": []
             }
         
         try:
@@ -988,6 +1162,17 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
                         'output': str(observation)[:200] + '...' if len(str(observation)) > 200 else str(observation)
                     })
             
+            # Extract sources from WebSearch tool usage
+            sources = self._extract_web_search_sources(intermediate_steps)
+            
+            # Verify grounding
+            grounding_info = self._verify_grounding(response, sources)
+            
+            # Enhance response with sources if WebSearch was used
+            if 'WebSearch' in tools_used and sources:
+                response = self._enhance_response_with_sources(response, sources, grounding_info)
+                logger.info(f"✅ Added {len(sources)} source citations to response")
+            
             # Save to memory
             self.memory_manager.add_interaction(
                 query=query,
@@ -1007,12 +1192,14 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
                 "metadata": {
                     "tools_used": tools_used,
                     "num_steps": len(agent_steps),
-                    "agent_reasoning": agent_steps
+                    "agent_reasoning": agent_steps,
+                    "grounding_info": grounding_info
                 },
+                "sources": sources,
                 "conversation_id": len(self.memory_manager.interaction_history) - 1
             }
             
-            logger.info(f"✅ Query completed. Tools used: {tools_used}")
+            logger.info(f"✅ Query completed. Tools used: {tools_used}. Sources: {len(sources)}")
             return result_dict
             
         except Exception as e:
@@ -1021,7 +1208,8 @@ Example: 'Who is Albert Einstein?' → input: 'Albert Einstein'."""
             traceback.print_exc()
             return {
                 "response": f"❌ An error occurred: {str(e)}",
-                "metadata": {"error": str(e)}
+                "metadata": {"error": str(e)},
+                "sources": []
             }
     
     def add_feedback(self, conversation_id: int, feedback: str):

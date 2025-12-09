@@ -217,9 +217,14 @@ def chat_ui(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[st
         result = rag_system.chat(message)
         response = result.get('response', 'No response')
         metadata = result.get('metadata', {})
+        sources = result.get('sources', [])
         
         if 'conversation_id' in result:
             metadata['conversation_id'] = result['conversation_id']
+        
+        # Add sources to metadata for display
+        if sources:
+            metadata['sources'] = sources
         
         history.append((message, response))
         return history, metadata
@@ -230,12 +235,14 @@ def chat_ui(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[st
 
 
 def display_agent_reasoning(metadata: Dict) -> str:
-    """Format agent reasoning."""
+    """Format agent reasoning with source citations."""
     if not metadata:
         return "<div class='status-card'>Waiting for query...</div>"
     
     tools_used = metadata.get('tools_used', [])
     agent_reasoning = metadata.get('agent_reasoning', [])
+    sources = metadata.get('sources', [])
+    grounding_info = metadata.get('grounding_info', {})
     
     output = '<div class="status-card">'
     output += '<h3>🤖 Agent Reasoning</h3>'
@@ -244,6 +251,21 @@ def display_agent_reasoning(metadata: Dict) -> str:
         output += '<p><strong>Tools Used:</strong> '
         for tool in tools_used:
             output += f'<span style="background: #667eea; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; margin: 0.25rem;">{tool}</span> '
+        output += '</p>'
+    
+    # Display grounding status if WebSearch was used
+    if 'WebSearch' in tools_used:
+        is_grounded = grounding_info.get('is_grounded', False)
+        has_citations = grounding_info.get('has_citations', False)
+        citation_count = grounding_info.get('citation_count', 0)
+        
+        grounding_status = "✅ Grounded" if is_grounded else "⚠️ Not Fully Grounded"
+        grounding_color = "#10b981" if is_grounded else "#f59e0b"
+        
+        output += f'<p style="margin-top: 0.5rem;"><strong>Grounding Status:</strong> '
+        output += f'<span style="color: {grounding_color}; font-weight: bold;">{grounding_status}</span>'
+        if citation_count > 0:
+            output += f' <span style="color: #6b7280;">({citation_count} citation(s))</span>'
         output += '</p>'
     
     if agent_reasoning:
@@ -257,6 +279,19 @@ def display_agent_reasoning(metadata: Dict) -> str:
             output += f'<strong>Step {i}: {tool}</strong><br>'
             output += f'<em>Input:</em> {tool_input}<br>'
             output += f'<em>Output:</em> {tool_output}'
+            output += '</div>'
+        output += '</div>'
+    
+    # Display sources section
+    if sources:
+        output += '<div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid #e5e7eb;">'
+        output += '<h4 style="margin-bottom: 0.5rem;">📚 Web Search Sources</h4>'
+        for i, source in enumerate(sources, 1):
+            title = source.get('title', 'Untitled')
+            url = source.get('url', '')
+            output += f'<div style="margin: 0.5rem 0; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">'
+            output += f'<strong>Source {i}:</strong> {title}<br>'
+            output += f'<a href="{url}" target="_blank" style="color: #667eea; text-decoration: none;">🔗 {url}</a>'
             output += '</div>'
         output += '</div>'
     
